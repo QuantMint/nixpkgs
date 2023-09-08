@@ -1,0 +1,254 @@
+From 6c1f9d01d43043fd7617283b3ad19d32c664a59a Mon Sep 17 00:00:00 2001
+From: Julia <git.7dfdo@slmail.me>
+Date: Thu, 20 Apr 2023 15:13:04 +0200
+Subject: [PATCH 1/6] added hooks functionality
+
+---
+ src/main.rs | 40 +++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 39 insertions(+), 1 deletion(-)
+
+diff --git a/src/main.rs b/src/main.rs
+index f0bf687..42c8feb 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -222,7 +222,23 @@ fn main() -> Result<(), String> {
+             .short('V')
+             .value_name("VERSION")
+             .help("Displays rot8 version")
+-            .takes_value(false)
++            .takes_value(false),
++        Arg::with_name("beforehooks")
++            .long("beforehooks")
++            .short('b')
++            .value_name("BEFOREHOOKS")
++            .help("Run hook(s) before screen rotation. Passes environment variable $ORIENTATION. Comma-seperated.")
++            .takes_value(true)
++            .use_value_delimiter(true)
++            .require_value_delimiter(true),
++        Arg::with_name("hooks")
++            .long("hooks")
++            .short('h')
++            .value_name("HOOKS")
++            .help("Run hook(s) after screen rotation. Passes environment variable $ORIENTATION. Comma-seperated.")
++            .takes_value(true)
++            .use_value_delimiter(true)
++            .require_value_delimiter(true)
+     ];
+ 
+     let cmd_lines = App::new("rot8").version(ROT8_VERSION).args(&args);
+@@ -238,6 +254,8 @@ fn main() -> Result<(), String> {
+     let sleep = matches.value_of("sleep").unwrap_or("default.conf");
+     let display = matches.value_of("display").unwrap_or("default.conf");
+     let touchscreens: Vec<&str> = matches.values_of("touchscreen").unwrap().collect();
++    let hooks: Vec<&str> = matches.values_of("hooks").unwrap_or_default().collect();
++    let beforehooks: Vec<&str> = matches.values_of("beforehooks").unwrap_or_default().collect();
+     let disable_keyboard = matches.is_present("keyboard");
+     let threshold = matches.value_of("threshold").unwrap_or("default.conf");
+     let old_state_owned = get_window_server_rotation_state(display, &backend)?;
+@@ -351,6 +369,16 @@ fn main() -> Result<(), String> {
+             matrix = current_orient.matrix;
+ 
+             if new_state != old_state {
++                for bhook in beforehooks.iter() {
++                    Command::new("bash")
++                        .arg("-c")
++                        .arg(bhook)
++                        .env("ORIENTATION", new_state)
++                        .spawn()
++                        .expect("A hook failed to start.")
++                        .wait()
++                        .expect("Waiting for a hook failed.");
++                }
+                 let keyboard_state = if new_state == "normal" {
+                     "enabled"
+                 } else {
+@@ -406,6 +434,16 @@ fn main() -> Result<(), String> {
+                     }
+                 }
+                 old_state = new_state;
++                for hook in hooks.iter() {
++                    Command::new("bash")
++                        .arg("-c")
++                        .arg(hook)
++                        .env("ORIENTATION", new_state)
++                        .spawn()
++                        .expect("A hook failed to start.")
++                        .wait()
++                        .expect("Waiting for a hook failed.");
++                }
+             }
+ 
+             if oneshot {
+
+From 679fd6b47cc48d6fb4235d0af345ab8454b484b4 Mon Sep 17 00:00:00 2001
+From: Julia <git.7dfdo@slmail.me>
+Date: Thu, 20 Apr 2023 15:37:31 +0200
+Subject: [PATCH 2/6] added PREV_ORIENTATION
+
+---
+ src/main.rs | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/src/main.rs b/src/main.rs
+index 42c8feb..5b8e11c 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -227,7 +227,7 @@ fn main() -> Result<(), String> {
+             .long("beforehooks")
+             .short('b')
+             .value_name("BEFOREHOOKS")
+-            .help("Run hook(s) before screen rotation. Passes environment variable $ORIENTATION. Comma-seperated.")
++            .help("Run hook(s) before screen rotation. Passes $ORIENTATION and $PREV_ORIENTATION to hooks. Comma-seperated.")
+             .takes_value(true)
+             .use_value_delimiter(true)
+             .require_value_delimiter(true),
+@@ -235,7 +235,7 @@ fn main() -> Result<(), String> {
+             .long("hooks")
+             .short('h')
+             .value_name("HOOKS")
+-            .help("Run hook(s) after screen rotation. Passes environment variable $ORIENTATION. Comma-seperated.")
++            .help("Run hook(s) after screen rotation. Passes $ORIENTATION and $PREV_ORIENTATION to hooks. Comma-seperated.")
+             .takes_value(true)
+             .use_value_delimiter(true)
+             .require_value_delimiter(true)
+@@ -374,6 +374,7 @@ fn main() -> Result<(), String> {
+                         .arg("-c")
+                         .arg(bhook)
+                         .env("ORIENTATION", new_state)
++                        .env("PREV_ORIENATION", old_state)
+                         .spawn()
+                         .expect("A hook failed to start.")
+                         .wait()
+@@ -433,17 +434,18 @@ fn main() -> Result<(), String> {
+                         }
+                     }
+                 }
+-                old_state = new_state;
+                 for hook in hooks.iter() {
+                     Command::new("bash")
+                         .arg("-c")
+                         .arg(hook)
+                         .env("ORIENTATION", new_state)
++                        .env("PREV_ORIENATION", old_state)
+                         .spawn()
+                         .expect("A hook failed to start.")
+                         .wait()
+                         .expect("Waiting for a hook failed.");
+                 }
++                old_state = new_state;
+             }
+ 
+             if oneshot {
+
+From 4f5c568e8878e0635955555bccf4d675f83a0efe Mon Sep 17 00:00:00 2001
+From: Julia <git.7dfdo@slmail.me>
+Date: Thu, 20 Apr 2023 15:38:56 +0200
+Subject: [PATCH 3/6] fixed typo
+
+---
+ src/main.rs | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/main.rs b/src/main.rs
+index 5b8e11c..c2aba82 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -374,7 +374,7 @@ fn main() -> Result<(), String> {
+                         .arg("-c")
+                         .arg(bhook)
+                         .env("ORIENTATION", new_state)
+-                        .env("PREV_ORIENATION", old_state)
++                        .env("PREV_ORIENTATION", old_state)
+                         .spawn()
+                         .expect("A hook failed to start.")
+                         .wait()
+@@ -439,7 +439,7 @@ fn main() -> Result<(), String> {
+                         .arg("-c")
+                         .arg(hook)
+                         .env("ORIENTATION", new_state)
+-                        .env("PREV_ORIENATION", old_state)
++                        .env("PREV_ORIENTATION", old_state)
+                         .spawn()
+                         .expect("A hook failed to start.")
+                         .wait()
+
+From c9f340ef199ec471f34255ee933974b35850fcee Mon Sep 17 00:00:00 2001
+From: Julia <git.7dfdo@slmail.me>
+Date: Fri, 21 Apr 2023 10:29:30 +0200
+Subject: [PATCH 4/6] Added --hooks option to README
+
+---
+ README.md | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/README.md b/README.md
+index 591910a..a3cd03f 100644
+--- a/README.md
++++ b/README.md
+@@ -76,6 +76,8 @@ There are the following args (defaults):
+ --invert-y              // Invert readings from the HW y axis
+ --invert-z              // Invert readings from the HW z axis
+ --oneshot               // Updates the screen rotation just once instead of continuously
++--beforehooks           // Execute a custom script before rotation
++--hooks                 // Execute a custom script after the rotation has finished
+ --version               // Returns the rot8 version
+ 
+ ```
+
+From 5c78e4a11bac662164fd3cc4306c5f86b51124a6 Mon Sep 17 00:00:00 2001
+From: Julia <git.7dfdo@slmail.me>
+Date: Tue, 27 Jun 2023 07:29:11 +0200
+Subject: [PATCH 5/6] expanded config reading
+
+---
+ src/main.rs | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/src/main.rs b/src/main.rs
+index c2aba82..d8bd4b9 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -254,8 +254,14 @@ fn main() -> Result<(), String> {
+     let sleep = matches.value_of("sleep").unwrap_or("default.conf");
+     let display = matches.value_of("display").unwrap_or("default.conf");
+     let touchscreens: Vec<&str> = matches.values_of("touchscreen").unwrap().collect();
+-    let hooks: Vec<&str> = matches.values_of("hooks").unwrap_or_default().collect();
+-    let beforehooks: Vec<&str> = matches.values_of("beforehooks").unwrap_or_default().collect();
++    let hooks: Vec<&str> = matches
++        .values_of("hooks")
++        .unwrap_or_default()
++        .collect();
++    let beforehooks: Vec<&str> = matches
++        .values_of("beforehooks")
++        .unwrap_or_default()
++        .collect();
+     let disable_keyboard = matches.is_present("keyboard");
+     let threshold = matches.value_of("threshold").unwrap_or("default.conf");
+     let old_state_owned = get_window_server_rotation_state(display, &backend)?;
+
+From 68621d9c79bd279c21c7a71c242489a04ebd333b Mon Sep 17 00:00:00 2001
+From: Julia <git.7dfdo@slmail.me>
+Date: Tue, 27 Jun 2023 07:40:25 +0200
+Subject: [PATCH 6/6] undid one of the expansions
+
+---
+ src/main.rs | 5 +----
+ 1 file changed, 1 insertion(+), 4 deletions(-)
+
+diff --git a/src/main.rs b/src/main.rs
+index d8bd4b9..09533d5 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -254,10 +254,7 @@ fn main() -> Result<(), String> {
+     let sleep = matches.value_of("sleep").unwrap_or("default.conf");
+     let display = matches.value_of("display").unwrap_or("default.conf");
+     let touchscreens: Vec<&str> = matches.values_of("touchscreen").unwrap().collect();
+-    let hooks: Vec<&str> = matches
+-        .values_of("hooks")
+-        .unwrap_or_default()
+-        .collect();
++    let hooks: Vec<&str> = matches.values_of("hooks").unwrap_or_default().collect();
+     let beforehooks: Vec<&str> = matches
+         .values_of("beforehooks")
+         .unwrap_or_default()
+

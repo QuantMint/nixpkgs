@@ -11,6 +11,8 @@ rustPlatform.buildRustPackage rec {
     hash = "sha256-i+VLVA/XKZiFPEeFHR3CpZKi8CWA/tiaZJerciqQHJ0=";
   };
 
+  patches = [ ./rot8.patch ];
+
   cargoHash = "sha256-Zz3RK79pMBn9JcpOVHf8vrvQzOJuV7anm136HcTBhJE=";
 
   meta = with lib; {
